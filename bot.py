@@ -9,7 +9,7 @@ user_id = os.environ.get('USER_ID')
 
 def check_stock_and_notify():
     # 測試清單：確保 1303 在最前面
-    stock_list = ["1303.TW", "2330.TW", "2317.TW", "2454.TW", "2308.TW", "2881.TW", "2882.TW", "2303.TW", "2891.TW", "1216.TW"]
+    stock_list = ["1303.TW", "2317.TW", "2454.TW", "2308.TW", "2881.TW", "2882.TW", "2303.TW", "2891.TW", "1216.TW"]
     
     hit_stocks = []
     print(f"🚀 開始執行 GitHub 端的正式掃描...")
