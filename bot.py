@@ -8,11 +8,7 @@ line_token = os.environ['LINE_TOKEN']
 user_id = os.environ['USER_ID']
 
 def get_tw_top_200():
-    """
-    這裡列出台灣市值前 200 大的主要熱門股與成分股代號
-    (涵蓋 0050, 0051 及主要產業龍頭)
-    """
-    # 這裡預組了一份台灣約 200 檔核心權值股清單
+    # 這裡維持 200 檔清單
     stocks = [
         "2330","2317","2454","2308","2412","2881","2882","2303","2891","3711",
         "2886","1301","1303","2408","1216","2884","2892","2002","2382","2885",
@@ -40,51 +36,44 @@ def get_tw_top_200():
 def check_stock_and_notify():
     stock_list = get_tw_top_200()
     hit_stocks = []
-    count = 0
-
-    print(f"🚀 開始全自動掃描台灣前 200 權值股...")
+    
+    print(f"🚀 開始掃描台股前 200 檔 (條件：7日新高)... ")
 
     for symbol in stock_list:
-        count += 1
         try:
             stock = yf.Ticker(symbol)
-            # 抓取 1 年歷史資料來判定
-            df = stock.history(period="1y")
+            # 只需要最近 10 天的資料就夠算 7 日新高了
+            df = stock.history(period="10d")
             
-            if len(df) < 20: continue
+            if len(df) < 8: continue
 
             current_price = df['Close'].iloc[-1]
-            # 取得「除了今天以外」的一年內最高價
-            history_high = df['High'].iloc[:-1].max()
+            # 取得「前 6 天」的最高價 (不含今天)
+            recent_7d_high = df['High'].iloc[-7:-1].max()
 
-            # 判斷創新高
-            if current_price >= history_high:
+            # 判斷是否創 7 日新高
+            if current_price >= recent_7d_high:
                 magic_number = current_price * 0.764
-                hit_stocks.append(f"📈 {symbol} ({current_price:.1f})\n   🎯 0.764: {magic_number:.1f}")
+                hit_stocks.append(f"✅ {symbol} ({current_price:.1f})\n   🎯 0.764 目標: {magic_number:.1f}")
             
-            # 每抓 10 檔休息 1 秒，避免被 Yahoo 鎖 IP
-            if count % 10 == 0:
-                time.sleep(1)
-                
-        except Exception as e:
-            print(f"❌ {symbol} 發生錯誤: {e}")
+        except Exception:
+            continue # 遇到錯誤直接跳過，加速執行
 
-    # 3. 整理訊息
+    # 整理並分段發送 (每 20 檔股票發一封，避免 LINE 訊息太長)
     if hit_stocks:
-        # 分批發送，避免一則訊息太長被 LINE 擋掉
-        header = f"🌟【今日台股創新高名單】\n(共掃描 {len(stock_list)} 檔)\n"
-        full_msg = header + "\n".join(hit_stocks)
-        
-        # 如果符合的股票太多(超過 20 檔)，LINE 一則訊息會塞不下，這裡做個簡單切割
-        send_to_line(full_msg[:2000]) # LINE 單則上限約 5000 字，2000 很安全
+        header = "🚩【今日 7 日新高名單】\n"
+        # 每 20 檔一組
+        for i in range(0, len(hit_stocks), 20):
+            chunk = hit_stocks[i:i + 20]
+            msg = header + "\n".join(chunk)
+            send_to_line(msg)
     else:
-        send_to_line("今日掃描完成，前 200 檔權值股中無人創新高。")
+        send_to_line("今日前 200 檔股票中，無人創 7 日新高。")
 
 def send_to_line(message):
     headers = {"Authorization": f"Bearer {line_token}", "Content-Type": "application/json"}
     payload = {"to": user_id, "messages": [{"type": "text", "text": message}]}
-    r = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
-    print(f"LINE 傳送狀態: {r.status_code}")
+    requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
 
 if __name__ == "__main__":
     check_stock_and_notify()
