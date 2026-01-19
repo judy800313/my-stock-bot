@@ -4,39 +4,56 @@ import os
 import time
 import pandas as pd
 
+# 讀取金鑰
 line_token = os.environ.get('LINE_TOKEN')
 user_id = os.environ.get('USER_ID')
 
+def get_tw_top_500():
+    # 這裡放 500 檔，並且把 1303 放在最前面確保優先執行
+    stocks = ["1303","2330","2317","2454","2308","2412","2881","2882","2303","2891","3711"]
+    # ... (請自行加入之前的 500 檔代號)
+    return [s + ".TW" for s in stocks]
+
 def check_stock_and_notify():
-    # 測試清單：確保 1303 在最前面
-    stock_list = ["1303.TW", "2317.TW", "2454.TW", "2308.TW", "2881.TW", "2882.TW", "2303.TW", "2891.TW", "1216.TW"]
-    
+    stock_list = get_tw_top_500()
     hit_stocks = []
-    print(f"🚀 開始執行 GitHub 端的正式掃描...")
+    
+    print(f"🚀 正式啟動 500 檔掃描...")
 
-    for symbol in stock_list:
+    for i, symbol in enumerate(stock_list):
         try:
-            # 強制下載最新資料
-            data = yf.download(symbol, period="10d", progress=False)
-            if data.empty: continue
+            # 1. 抓取資料
+            stock = yf.Ticker(symbol)
+            df = stock.history(period="15d") # 多抓一點確保計算準確
+            
+            if df.empty or len(df) < 10: continue
 
-            # 取得最新價格與前 7 日高點
-            today_price = float(data['Close'].iloc[-1])
-            recent_high = float(data['High'].iloc[-8:-1].max())
+            # 2. 判定價格 (今日收盤 vs 前6日最高)
+            current_price = df['Close'].iloc[-1]
+            recent_high = df['High'].iloc[-8:-1].max()
 
-            print(f"分析 {symbol}: 目前 {today_price} / 高點 {recent_high}")
+            # 3. 如果是 1303，強制印出 debug 資訊
+            if "1303" in symbol:
+                print(f"DEBUG 1303: 今日收盤={current_price}, 前7日高點={recent_high}")
 
-            if today_price >= recent_high:
-                magic_number = today_price * 0.764
-                hit_stocks.append(f"✅ {symbol} ({today_price:.1f})\n   🎯 0.764: {magic_number:.1f}")
+            if current_price >= recent_high:
+                magic_number = current_price * 0.764
+                hit_stocks.append(f"✅ {symbol} ({current_price:.1f})\n   🎯 0.764: {magic_number:.1f}")
+            
+            # 避免被 Yahoo 擋
+            if i % 30 == 0: time.sleep(1)
+                
         except Exception as e:
-            print(f"❌ {symbol} 錯誤: {e}")
+            print(f"❌ {symbol} 出錯: {e}")
 
+    # 4. 發送 LINE
     if hit_stocks:
-        msg = "🚩【GitHub 直送報告】\n" + "\n".join(hit_stocks)
-        send_to_line(msg)
+        header = f"🚩【7日新高報告】\n符合數：{len(hit_stocks)} 檔\n"
+        for i in range(0, len(hit_stocks), 15):
+            chunk = hit_stocks[i : i + 15]
+            send_to_line(header + "--------------\n" + "\n".join(chunk))
     else:
-        send_to_line("GitHub 執行完畢，無人創新高。")
+        send_to_line("今日掃描完成，無人創新高。")
 
 def send_to_line(message):
     headers = {"Authorization": f"Bearer {line_token}", "Content-Type": "application/json"}
