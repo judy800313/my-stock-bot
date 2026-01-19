@@ -3,122 +3,155 @@ import requests
 import os
 import time
 import pandas as pd
+from datetime import datetime
+import pytz
 
-# 從 GitHub Secrets 讀取金鑰
-line_token = os.environ.get('LINE_TOKEN')
-user_id = os.environ.get('USER_ID')
+# =========================================================
+# USER CONFIG
+# =========================================================
+
+MODE = "INTRADAY"
+# INTRADAY : 今日「盤中曾」創 7 日新高（使用 day_high）
+# CLOSE    : 目前價格站上 7 日新高（使用 last_price）
+
+LOOKBACK_DAYS = 7
+TZ = pytz.timezone("Asia/Taipei")
+
+LINE_TOKEN = os.environ.get("LINE_TOKEN")
+USER_ID = os.environ.get("USER_ID")
+
+# =========================================================
+# STOCK LIST
+# =========================================================
 
 def get_tw_top_500():
-    """
-    提供台灣股市約 500 檔核心權值股清單
-    """
     stocks = [
         "2330","2317","2454","2308","2412","2881","2882","2303","2891","3711",
         "2886","1301","1303","2408","1216","2884","2892","2002","2382","2885",
-        "2357","2912","1326","2880","3008","2603","2883","2887","2379","5880",
-        "2327","2207","2345","3045","2409","2609","3231","2356","4938","2890",
-        "1101","1504","4904","2615","2474","2801","1402","2395","6505","9904",
-        "1102","2301","5871","2352","1605","1304","2105","2610","2618","9910",
-        "2383","2451","2377","2353","2324","3037","3034","2313","2360","6669",
-        "8046","6415","3035","3443","2376","2449","2337","2458","3406","6176",
-        "3017","3532","3044","2385","2492","6213","2439","4919","3533","5434",
-        "2404","6271","2354","2355","3019","8215","2368","3006","6139","2809",
-        "2812","2834","2845","2855","5876","6005","2851","2838","2867","1513",
-        "1514","1519","1503","1511","1722","1717","1723","1710","1708","2103",
-        "2106","2108","9921","9914","9945","9933","9917","9925","8464","2633",
-        "2606","2617","2605","2201","2204","2206","1312","1313","1314","1305",
-        "1308","1309","1310","1434","1440","1476","1477","1210","1227","1232",
-        "1231","1702","1707","1720","4142","1760","3702","3704","3706","2401",
-        "2421","2457","2471","2480","2481","3014","3023","3029","3042","3062",
-        "3189","3376","3576","3596","3653","3661","4958","4961","5269","6205",
-        "6206","6285","6409","6412","6531","6533","8016","8150","2006","2014",
-        "2023","2027","2031","2501","2511","2542","5522","2548","9930","2611",
-        "1508","1536","1590","1609","1704","1711","1725","1727","1773","1789",
-        "1802","1904","1909","2006","2014","2015","2027","2031","2101","2103",
-        "2104","2106","2201","2204","2206","2207","2231","2312","2324","2329",
-        "2337","2340","2347","2352","2353","2354","2355","2356","2360","2367",
-        "2368","2371","2376","2377","2383","2385","2392","2395","2401","2402",
-        "2404","2409","2419","2420","2421","2428","2439","2449","2451","2455",
-        "2457","2458","2474","2480","2481","2492","2498","2501","2504","2511",
-        "2515","2520","2534","2542","2548","2603","2605","2606","2607","2609",
-        "2610","2615","2617","2618","2633","2634","2637","2707","2723","2727",
-        "2801","2809","2812","2834","2838","2845","2851","2855","2867","2880",
-        "2881","2882","2883","2884","2885","2886","2887","2888","2889","2890",
-        "2891","2892","2897","2903","2912","2915","3003","3004","3005","3006",
-        "3010","3014","3017","3019","3023","3029","3030","3034","3035","3036",
-        "3037","3042","3044","3045","3231","3376","3406","3443","3481","3532",
-        "3533","3596","3653","3661","3665","3702","3704","3706","3708","3711",
-        "3714","4142","4763","4904","4906","4915","4919","4938","4958","5264",
-        "5269","5522","5871","5876","5880","6005","6176","6213","6239","6269",
-        "6271","6281","6282","6285","6409","6412","6414","6415","6443","6446",
-        "6472","6505","6531","6669","6691","8046","8150","8215","8454","8464",
-        "9904","9910","9914","9917","9921","9933","9945"
+        "2101"
     ]
-    # 使用 set 確保代號不重複並排序
-    unique_stocks = sorted(list(set(stocks)))
-    return [s + ".TW" for s in unique_stocks]
+    return [s + ".TW" for s in stocks]
 
-def check_stock_and_notify():
+# =========================================================
+# CORE LOGIC
+# =========================================================
+
+def detect_breakout(stock, df):
+    fi = stock.fast_info
+
+    last_price = fi.get("last_price")
+    day_high = fi.get("day_high")
+
+    if last_price is None:
+        return None
+
+    today = datetime.now(TZ).date()
+    last_bar = df.index[-1].date()
+
+    if last_bar >= today:
+        recent_high = df["High"].iloc[-LOOKBACK_DAYS-1:-1].max()
+    else:
+        recent_high = df["High"].iloc[-LOOKBACK_DAYS:].max()
+
+    if MODE == "INTRADAY":
+        if day_high is None:
+            return None
+        hit = day_high >= recent_high
+        trigger_price = day_high
+
+    elif MODE == "CLOSE":
+        hit = last_price >= recent_high
+        trigger_price = last_price
+
+    else:
+        raise ValueError("MODE must be INTRADAY or CLOSE")
+
+    if not hit:
+        return None
+
+    return {
+        "symbol": stock.ticker,
+        "trigger": trigger_price,
+        "recent_high": recent_high,
+        "magic": trigger_price * 0.764
+    }
+
+# =========================================================
+# MAIN
+# =========================================================
+
+def run():
     stock_list = get_tw_top_500()
-    hit_stocks = []
-    
-    print(f"🕵️‍♂️ 開始掃描台股 {len(stock_list)} 檔 (7日新高條件)... ")
+    hits = []
+
+    print(f"🔍 Scanning {len(stock_list)} stocks | MODE={MODE}")
 
     for i, symbol in enumerate(stock_list):
         try:
             stock = yf.Ticker(symbol)
-            # 抓取最近 10 天歷史資料，auto_adjust 關閉以對齊看盤軟體
-            df = stock.history(period="10d", auto_adjust=False)
-            
-            if len(df) < 5: continue
+            df = stock.history(period="10d")
 
-            # 🚀 雙重防漏機制：
-            # 同時檢查「歷史收盤」與「當前即時價」，取最高者，解決延遲問題
-            try:
-                realtime_price = stock.fast_info['last_price']
-            except:
-                realtime_price = 0
-                
-            current_price = max(df['Close'].iloc[-1], realtime_price)
-            
-            # 取得「前 6 天」的盤中最高價 (不含今天)
-            # 如果資料庫已經包含了今天的 High，我們要避開它
-            today_date = pd.Timestamp.now(tz='Asia/Taipei').date()
-            if df.index[-1].date() >= today_date:
-                recent_high = df['High'].iloc[-7:-1].max()
-            else:
-                recent_high = df['High'].iloc[-6:].max()
+            if len(df) < LOOKBACK_DAYS:
+                continue
 
-            # 判斷是否創新高
-            if current_price >= recent_high:
-                magic_number = current_price * 0.764
-                hit_stocks.append(f"✅ {symbol} ({current_price:.1f})\n   🎯 0.764: {magic_number:.1f}")
-            
-            # 效能調節：每掃描 25 檔休息 0.5 秒，避免被封鎖
+            result = detect_breakout(stock, df)
+            if result:
+                hits.append(
+                    f"✅ {result['symbol']}\n"
+                    f"   ▶ Trigger: {result['trigger']:.2f}\n"
+                    f"   ⛰ Prev High: {result['recent_high']:.2f}\n"
+                    f"   🎯 0.764: {result['magic']:.2f}"
+                )
+
             if i % 25 == 0:
                 time.sleep(0.5)
-                
-        except Exception:
-            continue
 
-    # 4. 發送結果 (每 15 檔切成一則 LINE 訊息)
-    if hit_stocks:
-        header = f"🚩【7日新高報告】\n掃描：{len(stock_list)} 檔 / 符合：{len(hit_stocks)} 檔\n"
-        for i in range(0, len(hit_stocks), 15):
-            chunk = hit_stocks[i : i + 15]
-            msg = header + "--------------\n" + "\n".join(chunk)
-            send_to_line(msg)
-            time.sleep(1) # 訊息間隔，避免 LINE 官方擋訊息
-    else:
-        send_to_line(f"今日掃描 {len(stock_list)} 檔完畢，無人符合 7 日新高。")
+        except Exception as e:
+            print(f"❌ {symbol} skipped: {e}")
 
-def send_to_line(message):
-    if not line_token or not user_id:
-        print("Error: Missing LINE_TOKEN or USER_ID")
+    notify(hits, len(stock_list))
+
+# =========================================================
+# LINE NOTIFY
+# =========================================================
+
+def notify(hits, total):
+    if not LINE_TOKEN or not USER_ID:
+        print("⚠️ LINE_TOKEN or USER_ID not set")
         return
-    headers = {"Authorization": f"Bearer {line_token}", "Content-Type": "application/json"}
-    payload = {"to": user_id, "messages": [{"type": "text", "text": message}]}
-    requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
+
+    if not hits:
+        send_line("📭 Scan completed. No 7-day high detected.")
+        return
+
+    header = (
+        f"🚩 7-Day High Alert\n"
+        f"MODE: {MODE}\n"
+        f"Scanned: {total}\n"
+        f"Hits: {len(hits)}\n"
+        f"----------------------"
+    )
+
+    for i in range(0, len(hits), 10):
+        msg = header + "\n" + "\n\n".join(hits[i:i+10])
+        send_line(msg)
+        time.sleep(1)
+
+def send_line(message):
+    url = "https://api.line.me/v2/bot/message/push"
+    headers = {
+        "Authorization": f"Bearer {LINE_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "to": USER_ID,
+        "messages": [{"type": "text", "text": message}]
+    }
+    requests.post(url, headers=headers, json=payload, timeout=10)
+
+# =========================================================
+# ENTRY
+# =========================================================
 
 if __name__ == "__main__":
-    check_stock_and_notify()
+    run()
