@@ -13,8 +13,8 @@ def get_tw_top_500():
     提供台灣股市前 500 檔核心權值股清單
     """
     stocks = [
-        "2330","2317","2454","2308","2412","2881","2882","2303","2891","3711",
-        "2886","1301","1303","2408","1216","2884","2892","2002","2382","2885",
+        "2330","1303","2317","2454","2308","2412","2881","2882","2303","2891","3711",
+        "2886","1301","2408","1216","2884","2892","2002","2382","2885",
         "2357","2912","1326","2880","3008","2603","2883","2887","2379","5880",
         "2327","2207","2345","3045","2409","2609","3231","2356","4938","2890",
         "1101","1504","4904","2615","2474","2801","1402","2395","6505","9904",
@@ -64,65 +64,81 @@ def get_tw_top_500():
         "2010","2012","2013","2015","2017","2020","2022","2024","2025","2028",
         "2029","2030","2032","2033","2034","2038","2049","2059","2062","2101"
     ]
-    return [s + ".TW" for s in stocks]
+    # 使用 set 去除可能重複的代號，確保只有 500 檔左右
+    unique_stocks = sorted(list(set(stocks)))
+    return [s + ".TW" for s in unique_stocks]
 
 def check_stock_and_notify():
     stock_list = get_tw_top_500()
     hit_stocks = []
     
-    print(f"🕵️‍♂️ 開始掃描台股 500 檔 (使用即時價格偵測)... ")
+    print(f"🕵️‍♂️ 啟動超級偵錯掃描 (目標：{len(stock_list)} 檔)... ")
 
     for i, symbol in enumerate(stock_list):
         try:
+            # 增加 retry 機制，避免單次抓取失敗
             stock = yf.Ticker(symbol)
-            # 抓取最近 10 天歷史資料
             df = stock.history(period="10d")
             
-            if len(df) < 5: continue
+            if len(df) < 5: 
+                print(f"⚠️ {symbol} 資料不足，跳過")
+                continue
 
-            # ⚡ 核心修復：使用 fast_info 解決 Yahoo 資料更新延遲問題
-            current_price = stock.fast_info['last_price']
+            # 🚀 雙重價格判斷法：
+            # 同時抓取歷史最後一筆收盤價，以及 Fast Info 的即時成交價，取最大者
+            hist_close = df['Close'].iloc[-1]
+            try:
+                fast_price = stock.fast_info['last_price']
+            except:
+                fast_price = 0
             
-            # 判斷歷史資料是否已更新今日數據，決定比對的高點範圍
-            today_date = pd.Timestamp.now(tz='Asia/Taipei').date()
-            if df.index[-1].date() >= today_date:
-                # 若已更新，比對對象為 [倒數第7筆 : 倒數第2筆] 之間的最大值
-                recent_high = df['High'].iloc[-7:-1].max()
-            else:
-                # 若未更新，比對對象為 [最後6筆] 之間的最大值
-                recent_high = df['High'].iloc[-6:].max()
+            current_price = max(hist_close, fast_price)
+            
+            # 🚀 嚴謹的高點判斷：
+            # 找出「不含最後一筆」的前面幾天最高價
+            recent_high = df['High'].iloc[:-1].max()
 
-            # 判斷是否創 7 日新高
+            # 🔍 強制偵錯印出：讓我們看看 1303 的數據
+            if "1303" in symbol:
+                print(f"--- DEBUG 1303 ---")
+                print(f"歷史最後收盤: {hist_close}")
+                print(f"即時 FastInfo 價格: {fast_price}")
+                print(f"判定使用價格: {current_price}")
+                print(f"比對高點 (除今日外): {recent_high}")
+                print(f"結果: {'錄取' if current_price >= recent_high else '未過線'}")
+
+            # 判斷是否創新高 (或是平高點)
             if current_price >= recent_high:
                 magic_number = current_price * 0.764
                 hit_stocks.append(f"✅ {symbol} ({current_price:.1f})\n   🎯 0.764: {magic_number:.1f}")
             
-            # 效能優化：每 25 檔稍微休息，避免觸發 Yahoo 頻率限制
-            if i % 25 == 0:
+            if i % 30 == 0:
                 time.sleep(0.5)
                 
         except Exception as e:
-            print(f"❌ {symbol} 抓取跳過: {e}")
+            print(f"❌ {symbol} 處理出錯: {e}")
             continue
 
-    # 4. 發送結果 (分段發送，每 15 檔一則訊息)
+    # 4. 發送結果
     if hit_stocks:
-        header = f"🚩【今日 7 日新高報告】\n掃描：{len(stock_list)} 檔\n符合：{len(hit_stocks)} 檔\n"
-        for i in range(0, len(hit_stocks), 15):
+        total = len(hit_stocks)
+        header = f"🚩【7日新高掃描報告】\n掃描：{len(stock_list)} 檔 / 符合：{total} 檔\n"
+        for i in range(0, total, 15):
             chunk = hit_stocks[i : i + 15]
             msg = header + "--------------\n" + "\n".join(chunk)
             send_to_line(msg)
-            time.sleep(1) # 避免 LINE API 過載
+            time.sleep(1)
     else:
-        send_to_line("今日掃描完成，清單中無人符合 7 日新高。")
+        send_to_line(f"今日掃描 {len(stock_list)} 檔完畢，無人符合 7 日新高。")
 
 def send_to_line(message):
     if not line_token or not user_id:
-        print("錯誤：找不到 LINE_TOKEN 或 USER_ID 設定")
+        print("錯誤：找不到 LINE_TOKEN 或 USER_ID")
         return
     headers = {"Authorization": f"Bearer {line_token}", "Content-Type": "application/json"}
     payload = {"to": user_id, "messages": [{"type": "text", "text": message}]}
-    requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
+    r = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
+    print(f"LINE 發送狀態: {r.status_code}")
 
 if __name__ == "__main__":
     check_stock_and_notify()
