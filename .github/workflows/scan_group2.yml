@@ -1,7 +1,7 @@
-name: Scan Group 2 (14:45)
+name: Scan Group 2 (16:00)
 on:
   schedule:
-    - cron: '45 6 * * *'
+    - cron: '0 8 * * 1-5'  # 台北 16:00
   workflow_dispatch:
 jobs:
   build:
@@ -11,10 +11,11 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install
-        run: pip install --no-cache-dir yfinance==0.2.52 pandas requests
+      - name: Install dependencies
+        run: pip install pandas requests
       - name: Run
         env:
           LINE_TOKEN: ${{ secrets.LINE_TOKEN }}
           USER_ID: ${{ secrets.USER_ID }}
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: python bot.py 2
