@@ -2,7 +2,7 @@ name: 每日股價檢查
 on:
   schedule:
     - cron: '30 6 * * *' # 台灣時間下午 2:30 檢查
-  workflow_dispatch: # 讓你可以手動按按鈕測試
+  workflow_dispatch: 
 
 jobs:
   build:
@@ -12,7 +12,8 @@ jobs:
         uses: actions/checkout@v3
       - name: 安裝工具
         run: |
-          pip install yfinance requests
+          python -m pip install --upgrade pip
+          pip install yfinance==0.2.52 requests pandas # 指定穩定版本
       - name: 執行機器人
         env:
           LINE_TOKEN: ${{ secrets.LINE_TOKEN }}
