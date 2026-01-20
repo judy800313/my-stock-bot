@@ -2,8 +2,8 @@ name: Scan Group 1 (15:00)
 
 on:
   schedule:
-    - cron: '50 7 * * 1-5'  # 台北 15:45
-  workflow_dispatch:        # 👈 這一行必須跟上面的 schedule 對齊！
+    - cron: '58 7 * * 1-5'  # 改為 15:58 方便你現在測試
+  workflow_dispatch:        # ✅ 這裡必須退回 2 格，與 schedule 對齊
 
 jobs:
   build:
