@@ -1,7 +1,7 @@
 name: Scan Group 4 (18:00)
 on:
   schedule:
-    - cron: '0 10 * * 1-5' # 台北 18:00
+    - cron: '5 10 * * 1-5'
   workflow_dispatch:
 jobs:
   build:
