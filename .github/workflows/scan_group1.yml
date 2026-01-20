@@ -1,8 +1,10 @@
 name: Scan Group 1 (15:00)
+
 on:
   schedule:
-    - cron: '45 7 * * 1-5'  # 台北 15:45
-  workflow_dispatch:
+    - cron: '50 7 * * 1-5'  # 台北 15:45
+  workflow_dispatch:        # 👈 這一行必須跟上面的 schedule 對齊！
+
 jobs:
   build:
     runs-on: ubuntu-latest
