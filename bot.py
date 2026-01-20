@@ -82,7 +82,6 @@ def get_stock_dict():
 
 def main():
     stock_dict = get_stock_dict()
-    # 自動將對照表的 Key 轉為掃描清單，並按代碼排序
     all_list = sorted(list(stock_dict.keys()))
 
     try:
@@ -90,7 +89,7 @@ def main():
     except:
         group_idx = 1
 
-    size = 40 # 每組改為 40 檔，共 5 組剛好 200 檔
+    size = 40
     target = all_list[(group_idx-1)*size : group_idx*size]
     
     if not target: return
@@ -108,19 +107,20 @@ def main():
             curr = df['close'].iloc[-1]
             past_high = df['max'].iloc[-8:-1].max()
             
-            # 條件：收盤價 >= 過去 7 日最高價
             if curr >= past_high:
-                name = stock_dict.get(s, "")
-                hit_list.append(f"✅ {s} {name}: {curr:.2f}\n   🎯 支撐: {curr*0.764:.2f}")
+                name = stock_dict.get(s, "未知")
+                # ✨ 在結尾加上兩個換行 \n\n 讓每組結果中間有空行
+                hit_list.append(f"✅ {s} {name}: {curr:.2f}\n🎯 支撐: {curr*0.764:.2f}\n")
             
             print(f"🔎 掃描完成: {s}")
-            time.sleep(0.4) # FinMind 免費版建議休息時間
+            time.sleep(0.4)
             
         except Exception as e:
             print(f"❌ {s} 出錯: {e}")
 
     if hit_list:
-        send_line(f"🚩【第 {group_idx} 組篩選報告】\n" + "\n".join(hit_list))
+        # 將列表合併成一長串訊息發送
+        send_line(f"🚩【第 {group_idx} 組篩選報告】\n\n" + "\n".join(hit_list))
     else:
         send_line(f"💡 第 {group_idx} 組今日無符合標的。")
 
