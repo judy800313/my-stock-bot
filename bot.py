@@ -10,21 +10,15 @@ LINE_TOKEN = os.getenv('LINE_TOKEN')
 USER_ID = os.getenv('USER_ID')
 
 def send_line(msg):
-    """發送訊息至 LINE"""
-    if not LINE_TOKEN or not USER_ID:
-        print("❌ 錯誤：找不到 LINE_TOKEN 或 USER_ID")
-        return
+    if not LINE_TOKEN or not USER_ID: return
     url = "https://api.line.me/v2/bot/message/push"
     headers = {"Authorization": f"Bearer {LINE_TOKEN}", "Content-Type": "application/json"}
     payload = {"to": USER_ID, "messages": [{"type": "text", "text": msg}]}
     try:
-        r = requests.post(url, headers=headers, json=payload)
-        print(f"📡 LINE 回傳狀態碼: {r.status_code}")
-    except Exception as e:
-        print(f"❌ LINE 發送失敗: {e}")
+        requests.post(url, headers=headers, json=payload, timeout=10)
+    except: pass
 
 def get_all_stocks():
-    """完整 200 檔清單"""
     all_list = [
         "1101","1102","1210","1216","1301","1303","1319","1326","1402","1476",
         "1503","1504","1513","1519","1560","1590","1605","1717","1722","1723",
@@ -53,48 +47,48 @@ def main():
         group_idx = 1
     
     stocks = get_all_stocks()
-    size = 20 # 縮小每組掃描數量以提高成功率
+    size = 20 # 縮小每批數量，保持穩定
     start = (group_idx - 1) * size
     end = group_idx * size
     target = stocks[start:end]
     
     if not target: return
 
-    print(f"🚀 開始掃描第 {group_idx} 組 (共 {len(target)} 檔)...")
-    send_line(f"🤖 掃描啟動：第 {group_idx} 組")
+    # 通知 LINE 機器人已在運行中
+    send_line(f"🤖 正在掃描第 {group_idx} 組 (共 {len(target)} 檔)...")
+
+    # 建立偽裝 Session
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/110.0.0.0 Safari/537.36'
+    })
 
     hit_list = []
-    # 使用 Session 偽裝成瀏覽器
-    session = requests.Session()
-    session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124 Safari/537.36'})
-
     for s in target:
         try:
-            ticker = yf.Ticker(s, session=session)
-            df = ticker.history(period="1mo")
+            # 關鍵：使用單獨的 Ticker 抓取，不要用 yf.download
+            t = yf.Ticker(s, session=session)
+            df = t.history(period="1mo")
             
-            if df.empty or len(df) < 10:
-                print(f"⚠️ {s} 無法取得數據")
-                continue
+            if not df.empty and len(df) >= 10:
+                curr = df['Close'].iloc[-1]
+                past_high = df['High'].iloc[-8:-1].max()
+                
+                if curr >= past_high:
+                    hit_list.append(f"✅ {s}: {curr:.2f}")
             
-            curr = df['Close'].iloc[-1]
-            past_high = df['High'].iloc[-8:-1].max()
-            
-            # 條件：收盤價 >= 前 7 天最高價 (過高)
-            if curr >= past_high:
-                hit_list.append(f"✅ {s}: {curr:.2f} (支撐: {curr*0.764:.2f})")
-            
-            print(f"🔎 檢查完畢: {s}")
-            # 關鍵：每檔抓完隨機休息 2-4 秒，避免被鎖
-            time.sleep(random.uniform(2, 4))
+            print(f"🔎 已掃描 {s}")
+            # 隨機休息 3-6 秒，模仿真人行為，這是過關關鍵
+            time.sleep(random.uniform(3, 6))
             
         except Exception as e:
-            print(f"❌ {s} 出錯: {e}")
+            print(f"❌ {s} 錯誤: {e}")
+            time.sleep(10)
 
     if hit_list:
-        send_line(f"🚩【篩選結果 - 第 {group_idx} 組】\n" + "\n".join(hit_list))
+        send_line(f"🚩【第 {group_idx} 組篩選結果】\n" + "\n".join(hit_list))
     else:
-        send_line(f"💡 第 {group_idx} 組掃描完成，目前無標的。")
+        send_line(f"💡 第 {group_idx} 組掃描完畢，目前無符合標的。")
 
 if __name__ == "__main__":
     main()
