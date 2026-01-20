@@ -10,6 +10,7 @@ LINE_TOKEN = os.getenv('LINE_TOKEN')
 USER_ID = os.getenv('USER_ID')
 
 def send_line(msg):
+    """發送訊息至 LINE"""
     if not LINE_TOKEN or not USER_ID:
         print("❌ 錯誤：找不到 LINE_TOKEN 或 USER_ID")
         return
@@ -18,12 +19,13 @@ def send_line(msg):
     payload = {"to": USER_ID, "messages": [{"type": "text", "text": msg}]}
     try:
         r = requests.post(url, headers=headers, json=payload)
-        print(f"📡 LINE 回傳: {r.status_code}")
+        print(f"📡 LINE 回傳狀態碼: {r.status_code}")
     except Exception as e:
         print(f"❌ LINE 發送失敗: {e}")
 
 def get_all_stocks():
-    #   all_list = [
+    """完整 200 檔清單"""
+    all_list = [
         "1101","1102","1210","1216","1301","1303","1319","1326","1402","1476",
         "1503","1504","1513","1519","1560","1590","1605","1717","1722","1723",
         "2002","2301","2303","2308","2317","2330","2337","2352","2357","2382",
@@ -31,9 +33,6 @@ def get_all_stocks():
         "3037","3231","3481","4938","5871","6505","9904","2449","2451","3034",
         "3035","3711","6415","2344","2360","2376","2377","2379","2383","2385",
         "2408","2439","2458","3006","3017","3023","3036","3044","3189","3227",
-        "3406","3443","3532","3533","3583","3653","3661","4739","4919","4958",
-        "4961","4967","4968","5234","5269","5274","6176","6205","6213","6239",
-        "6271","6414","6446","6472","6510","6515","6531","6533","6643","6669",
         "2605","2606","2615","2633","2634","2637","2801","2809","2812","2834",
         "2880","2883","2884","2885","2886","2887","2888","2889","2890","2891",
         "2892","2897","5876","5880","6005","9910","9914","9917","9921","9933",
@@ -47,55 +46,55 @@ def get_all_stocks():
     ]
     return sorted(list(set([s + ".TW" for s in all_list])))
 
-def run_scanner(group_idx):
+def main():
+    try:
+        group_idx = int(sys.argv[1])
+    except:
+        group_idx = 1
+    
     stocks = get_all_stocks()
-    size = 20 # 降低每組數量，提高成功率
+    size = 20 # 縮小每組掃描數量以提高成功率
     start = (group_idx - 1) * size
     end = group_idx * size
     target = stocks[start:end]
     
     if not target: return
 
-    print(f"🚀 啟動掃描第 {group_idx} 組 (抗封鎖模式)...")
-    send_line(f"🤖 掃描開始 (第 {group_idx} 組)")
+    print(f"🚀 開始掃描第 {group_idx} 組 (共 {len(target)} 檔)...")
+    send_line(f"🤖 掃描啟動：第 {group_idx} 組")
 
     hit_list = []
-    
-    # 建立一個偽裝的 Session
+    # 使用 Session 偽裝成瀏覽器
     session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    })
+    session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124 Safari/537.36'})
 
     for s in target:
         try:
             ticker = yf.Ticker(s, session=session)
-            # 抓取歷史資料
             df = ticker.history(period="1mo")
             
             if df.empty or len(df) < 10:
-                print(f"⚠️ {s} 無資料 (可能被擋)")
+                print(f"⚠️ {s} 無法取得數據")
                 continue
-                
+            
             curr = df['Close'].iloc[-1]
             past_high = df['High'].iloc[-8:-1].max()
             
+            # 條件：收盤價 >= 前 7 天最高價 (過高)
             if curr >= past_high:
                 hit_list.append(f"✅ {s}: {curr:.2f} (支撐: {curr*0.764:.2f})")
             
-            print(f"🔎 已檢查 {s}")
-            # 關鍵：加入隨機延遲，模仿真人操作
-            time.sleep(random.uniform(2, 5)) 
+            print(f"🔎 檢查完畢: {s}")
+            # 關鍵：每檔抓完隨機休息 2-4 秒，避免被鎖
+            time.sleep(random.uniform(2, 4))
             
         except Exception as e:
-            print(f"❌ {s} 發生錯誤: {e}")
-            time.sleep(10) # 報錯就停久一點
+            print(f"❌ {s} 出錯: {e}")
 
     if hit_list:
-        send_line(f"🚩【符合條件】\n" + "\n".join(hit_list))
+        send_line(f"🚩【篩選結果 - 第 {group_idx} 組】\n" + "\n".join(hit_list))
     else:
-        send_line(f"💡 第 {group_idx} 組檢查完畢，今日無符合條件標的。")
+        send_line(f"💡 第 {group_idx} 組掃描完成，目前無標的。")
 
 if __name__ == "__main__":
-    idx = int(sys.argv[1]) if len(sys.argv) > 1 else 1
-    run_scanner(idx)
+    main()
